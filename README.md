@@ -1,3 +1,21 @@
+# Simon Data fork notice
+This is a Simon Data fork of `transferwise/pipelinewise`, used **only** for
+`singer-connectors/tap-mysql`. We install it directly from this monorepo via
+Meltano's `pip_url`, using pip's git-subdirectory syntax:
+`git+https://github.com/Radico/pipelinewise.git@<ref>#subdirectory=singer-connectors/tap-mysql`.
+
+We don't use, vet, or maintain any other connector or component in this
+repository — everything else here is untouched upstream code, kept only
+because `tap-mysql` lives inside this monorepo rather than its own package.
+
+Our own fixes accumulate on the `simon-data-fixes` branch (branched from a
+commit before upstream's Python 3.12 bump in `singer-connectors/tap-mysql`,
+since we install into a shared Python 3.11 image used by every other
+Meltano extractor we run — see that branch's PR history for why each fix
+was needed and which upstream commit, if any, it was cherry-picked from).
+
+---
+
 # PipelineWise
 
 PipelineWise is a Python 3.12 framework for configuring, running, and operating
