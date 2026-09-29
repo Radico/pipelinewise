@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # pylint: disable=too-many-locals,missing-function-docstring
 
-import pymysql
 import singer
 
 from singer import metadata
@@ -12,37 +11,6 @@ from tap_mysql.sync_strategies import common
 from tap_mysql.connection import connect_with_backoff
 
 LOGGER = singer.get_logger('tap_mysql')
-
-# pymysql codes for a connection that died mid-query (server restart, RDS
-# failover, or a transient network blip) -- distinct from a query actually
-# failing, which we should not retry.
-RECONNECTABLE_ERROR_CODES = {2006, 2013}  # server gone away / lost connection
-
-# A full-table snapshot of our larger tables can legitimately take minutes;
-# a handful of retries gives a transient mid-scan disconnect room to clear
-# without masking a real, persistent connectivity problem.
-MAX_RECONNECT_ATTEMPTS = 5
-
-
-def _root_reconnectable_error_code(exc):
-    """
-    pymysql's own cursor cleanup can mask a lost-connection error: once an
-    unbuffered query dies mid-stream, closing the cursor (the `with cursor()
-    as cur:` __exit__) tries to finish reading the abandoned result set on
-    the now-dead socket, which raises its own AttributeError
-    ("'NoneType' object has no attribute 'settimeout'"). Per Python's `with`
-    semantics that AttributeError -- not the original OperationalError -- is
-    what actually escapes the block, chained via __context__. Walk that chain
-    to find the real cause.
-    """
-    seen_ids = set()
-    current = exc
-    while current is not None and id(current) not in seen_ids:
-        seen_ids.add(id(current))
-        if isinstance(current, pymysql.err.OperationalError) and current.args:
-            return current.args[0]
-        current = current.__context__
-    return None
 
 
 def generate_bookmark_keys(catalog_entry):
@@ -171,53 +139,38 @@ def sync_table(mysql_conn, catalog_entry, state, columns, stream_version):
 
     key_props_are_auto_incrementing = pks_are_auto_incrementing(mysql_conn, catalog_entry)
 
-    for attempt in range(1, MAX_RECONNECT_ATTEMPTS + 1):
-        try:
-            with connect_with_backoff(mysql_conn) as open_conn:
-                with open_conn.cursor() as cur:
-                    select_sql = common.generate_select_sql(catalog_entry, columns)
+    with connect_with_backoff(mysql_conn) as open_conn:
+        with open_conn.cursor() as cur:
+            select_sql = common.generate_select_sql(catalog_entry, columns)
 
-                    if key_props_are_auto_incrementing:
-                        LOGGER.info("Detected auto-incrementing primary key(s) - will replicate incrementally")
-                        # Reuses the bookmarked value on a retry rather than re-querying
-                        # MAX(pk), so the snapshot's upper bound doesn't shift under us.
-                        max_pk_values = singer.get_bookmark(state,
-                                                            catalog_entry.tap_stream_id,
-                                                            'max_pk_values') or get_max_pk_values(cur, catalog_entry)
+            if key_props_are_auto_incrementing:
+                LOGGER.info("Detected auto-incrementing primary key(s) - will replicate incrementally")
+                max_pk_values = singer.get_bookmark(state,
+                                                    catalog_entry.tap_stream_id,
+                                                    'max_pk_values') or get_max_pk_values(cur, catalog_entry)
 
-                        if not max_pk_values:
-                            LOGGER.info(f"No max value for auto-incrementing PK found for table {catalog_entry.table}")
-                        else:
-                            state = singer.write_bookmark(state,
-                                                          catalog_entry.tap_stream_id,
-                                                          'max_pk_values',
-                                                          max_pk_values)
+                if not max_pk_values:
+                    LOGGER.info("No max value for auto-incrementing PK found for table %s", catalog_entry.table)
+                else:
+                    state = singer.write_bookmark(state,
+                                                  catalog_entry.tap_stream_id,
+                                                  'max_pk_values',
+                                                  max_pk_values)
 
-                            # Picks up from 'last_pk_fetched' (updated per-row by
-                            # common.sync_query) when this is a retry.
-                            pk_clause = generate_pk_clause(catalog_entry, state)
+                    pk_clause = generate_pk_clause(catalog_entry, state)
 
-                            select_sql += pk_clause
+                    select_sql += pk_clause
 
-                    params = {}
+            params = {}
 
-                    # pylint:disable=duplicate-code
-                    common.sync_query(cur,
-                                      catalog_entry,
-                                      state,
-                                      select_sql,
-                                      columns,
-                                      stream_version,
-                                      params)
-            break
-        except (pymysql.err.OperationalError, AttributeError) as exc:
-            error_code = _root_reconnectable_error_code(exc)
-            if error_code not in RECONNECTABLE_ERROR_CODES or attempt >= MAX_RECONNECT_ATTEMPTS:
-                raise
-            LOGGER.warning(
-                f"Lost connection mid-snapshot for table {catalog_entry.table} "
-                f"(attempt {attempt}/{MAX_RECONNECT_ATTEMPTS}): {exc}. "
-                "Reconnecting and resuming from the last checkpointed row.")
+            # pylint:disable=duplicate-code
+            common.sync_query(cur,
+                              catalog_entry,
+                              state,
+                              select_sql,
+                              columns,
+                              stream_version,
+                              params)
 
     # clear max pk value and last pk fetched upon successful sync
     singer.clear_bookmark(state, catalog_entry.tap_stream_id, 'max_pk_values')
