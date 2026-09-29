@@ -150,8 +150,7 @@ def sync_table(mysql_conn, catalog_entry, state, columns, stream_version):
 
     key_props_are_auto_incrementing = pks_are_auto_incrementing(mysql_conn, catalog_entry)
 
-    attempt = 0
-    while True:
+    for attempt in range(1, MAX_RECONNECT_ATTEMPTS + 1):
         try:
             with connect_with_backoff(mysql_conn) as open_conn:
                 with open_conn.cursor() as cur:
@@ -192,7 +191,6 @@ def sync_table(mysql_conn, catalog_entry, state, columns, stream_version):
             break
         except pymysql.err.OperationalError as exc:
             error_code = exc.args[0] if exc.args else None
-            attempt += 1
             if error_code not in RECONNECTABLE_ERROR_CODES or attempt >= MAX_RECONNECT_ATTEMPTS:
                 raise
             LOGGER.warning(
