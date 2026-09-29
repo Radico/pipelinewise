@@ -194,9 +194,9 @@ def sync_table(mysql_conn, catalog_entry, state, columns, stream_version):
             if error_code not in RECONNECTABLE_ERROR_CODES or attempt >= MAX_RECONNECT_ATTEMPTS:
                 raise
             LOGGER.warning(
-                "Lost connection mid-snapshot for table %s (attempt %d/%d): %s. "
-                "Reconnecting and resuming from the last checkpointed row.",
-                catalog_entry.table, attempt, MAX_RECONNECT_ATTEMPTS, exc)
+                f"Lost connection mid-snapshot for table {catalog_entry.table} "
+                f"(attempt {attempt}/{MAX_RECONNECT_ATTEMPTS}): {exc}. "
+                "Reconnecting and resuming from the last checkpointed row.")
 
     # clear max pk value and last pk fetched upon successful sync
     singer.clear_bookmark(state, catalog_entry.tap_stream_id, 'max_pk_values')
