@@ -21,7 +21,7 @@ DEFAULT_SESSION_SQLS = ['SET @@session.time_zone="+0:00"',
                         'SET @@session.wait_timeout=28800',
                         # Bounds how long a stalled read blocks before handing
                         # off to full_table.py's reconnect retry.
-                        'SET @@session.net_read_timeout=600',
+                        'SET @@session.net_read_timeout=300',
                         # Server default (~60s) killed unbuffered full-table
                         # scans with "Lost connection to MySQL server during
                         # query" on slower tables.
