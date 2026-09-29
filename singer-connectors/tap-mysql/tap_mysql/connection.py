@@ -11,6 +11,11 @@ from pymysql.constants import CLIENT
 LOGGER = singer.get_logger('tap_mysql')
 
 CONNECT_TIMEOUT_SECONDS = 30
+# How long our own socket read blocks waiting for a reply. See the
+# `read_timeout` connection arg below -- this is what actually bounds a
+# hung read; `net_read_timeout` (a session SQL var, set further down) only
+# bounds the *server's* patience waiting on data from us, not the reverse.
+READ_TIMEOUT_SECONDS = 300
 
 # We need to hold onto this for self-signed SSL
 MATCH_HOSTNAME = ssl.match_hostname
@@ -19,8 +24,7 @@ MYSQL_ENGINE = 'mysql'
 
 DEFAULT_SESSION_SQLS = ['SET @@session.time_zone="+0:00"',
                         'SET @@session.wait_timeout=28800',
-                        # Bounds how long a stalled read blocks before handing
-                        # off to full_table.py's reconnect retry.
+                        # Server-side counterpart to READ_TIMEOUT_SECONDS.
                         'SET @@session.net_read_timeout=300',
                         # Server default (~60s) killed unbuffered full-table
                         # scans with "Lost connection to MySQL server during
@@ -100,6 +104,7 @@ class MySQLConnection(pymysql.connections.Connection):
             "cursorclass": config.get("cursorclass") or pymysql.cursors.SSCursor,
             "connect_timeout": CONNECT_TIMEOUT_SECONDS,
             "charset": "utf8",
+            "read_timeout": READ_TIMEOUT_SECONDS,
         }
 
         ssl_arg = {"": True}
