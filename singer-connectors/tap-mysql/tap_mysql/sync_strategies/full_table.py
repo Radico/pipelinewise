@@ -165,7 +165,7 @@ def sync_table(mysql_conn, catalog_entry, state, columns, stream_version):
                                                             'max_pk_values') or get_max_pk_values(cur, catalog_entry)
 
                         if not max_pk_values:
-                            LOGGER.info("No max value for auto-incrementing PK found for table %s", catalog_entry.table)
+                            LOGGER.info(f"No max value for auto-incrementing PK found for table {catalog_entry.table}")
                         else:
                             state = singer.write_bookmark(state,
                                                           catalog_entry.tap_stream_id,
