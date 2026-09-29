@@ -20,7 +20,14 @@ MYSQL_ENGINE = 'mysql'
 DEFAULT_SESSION_SQLS = ['SET @@session.time_zone="+0:00"',
                         'SET @@session.wait_timeout=28800',
                         'SET @@session.net_read_timeout=3600',
-                        'SET @@session.innodb_lock_wait_timeout=3600']
+                        # Server default (~60s) killed unbuffered full-table
+                        # scans with "Lost connection to MySQL server during
+                        # query" on slower tables.
+                        'SET @@session.net_write_timeout=3600',
+                        'SET @@session.innodb_lock_wait_timeout=3600',
+                        # No server-side statement time limit; a large table's
+                        # full snapshot can legitimately run for a while.
+                        'SET @@session.max_execution_time=0']
 
 
 @backoff.on_exception(backoff.expo,

@@ -5,7 +5,13 @@ from unittest.mock import patch, MagicMock, call
 from pymysql.cursors import Cursor
 from singer import CatalogEntry
 
-from tap_mysql.connection import MySQLConnection, fetch_server_id, fetch_server_uuid
+from tap_mysql.connection import (
+    DEFAULT_SESSION_SQLS,
+    MySQLConnection,
+    fetch_server_id,
+    fetch_server_uuid,
+    run_session_sqls,
+)
 
 import tap_mysql.connection
 
@@ -56,4 +62,24 @@ class TestConnection(unittest.TestCase):
             [
                 call('SELECT @@server_uuid'),
             ]
+        )
+
+    def test_default_session_sqls_sets_net_write_timeout_and_max_execution_time(self):
+        # Simon-Data fix: net_write_timeout was previously left at the
+        # server's own default (commonly 60s), killing unbuffered
+        # full-table scans with `Lost connection to MySQL server during
+        # query` on any table that took a while to stream.
+        self.assertIn('SET @@session.net_write_timeout=3600', DEFAULT_SESSION_SQLS)
+        self.assertIn('SET @@session.max_execution_time=0', DEFAULT_SESSION_SQLS)
+
+    def test_run_session_sqls_executes_every_default_session_sql(self):
+        mysql_con = MagicMock(spec_set=MySQLConnection).return_value
+        mysql_con.session_sqls = DEFAULT_SESSION_SQLS
+        cur_mock = MagicMock(spec_set=Cursor).return_value
+        mysql_con.cursor.return_value = cur_mock
+
+        run_session_sqls(mysql_con)
+
+        cur_mock.__enter__.return_value.execute.assert_has_calls(
+            [call(sql) for sql in DEFAULT_SESSION_SQLS]
         )
