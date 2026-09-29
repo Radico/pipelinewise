@@ -36,18 +36,24 @@ DEFAULT_SESSION_SQLS = ['SET @@session.time_zone="+0:00"',
                         'SET @@session.max_execution_time=0']
 
 
-@backoff.on_exception(backoff.expo,
-                      (pymysql.err.OperationalError),
-                      # Each try can itself block for up to READ_TIMEOUT_SECONDS;
-                      # kept low so this nested retry can't multiply with
-                      # full_table.py's own outer retry into an hours-long stall.
-                      max_tries=2,
-                      factor=2)
-def connect_with_backoff(connection):
+def open_connection(connection):
     connection.connect()
     run_session_sqls(connection)
 
     return connection
+
+
+# For callers that don't already retry the whole operation (e.g. a one-off
+# metadata query) and so need their own resilience layer. full_table.py's
+# reconnect retry calls open_connection() directly instead -- it's already
+# the retry loop for this connection, and stacking this on top of it would
+# just be a second, nested retry around the same failure.
+connect_with_backoff = backoff.on_exception(
+    backoff.expo,
+    (pymysql.err.OperationalError),
+    max_tries=5,
+    factor=2,
+)(open_connection)
 
 
 def run_session_sqls(connection):
