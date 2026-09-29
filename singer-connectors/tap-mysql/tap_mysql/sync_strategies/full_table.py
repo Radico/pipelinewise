@@ -9,7 +9,7 @@ from singer import metadata
 from tap_mysql.sync_strategies import binlog
 from tap_mysql.sync_strategies import common
 
-from tap_mysql.connection import connect_with_backoff, open_connection
+from tap_mysql.connection import connect_with_backoff
 
 LOGGER = singer.get_logger('tap_mysql')
 
@@ -18,9 +18,10 @@ LOGGER = singer.get_logger('tap_mysql')
 # failing, which we should not retry.
 RECONNECTABLE_ERROR_CODES = {2006, 2013}  # server gone away / lost connection
 
-# Each attempt can itself block for up to READ_TIMEOUT_SECONDS; kept low so a
-# sustained (not transient) connectivity problem fails within minutes instead
-# of grinding for a long time.
+# Each attempt reconnects via connect_with_backoff, which has its own nested
+# retry -- so this multiplies with connection.py's own max_tries. Kept low so
+# a sustained (not transient) connectivity problem fails within minutes
+# instead of silently grinding for hours.
 MAX_RECONNECT_ATTEMPTS = 2
 
 
@@ -173,7 +174,7 @@ def sync_table(mysql_conn, catalog_entry, state, columns, stream_version):
 
     for attempt in range(1, MAX_RECONNECT_ATTEMPTS + 1):
         try:
-            with open_connection(mysql_conn) as open_conn:
+            with connect_with_backoff(mysql_conn) as open_conn:
                 with open_conn.cursor() as cur:
                     select_sql = common.generate_select_sql(catalog_entry, columns)
 

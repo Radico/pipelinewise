@@ -43,7 +43,7 @@ class TestFullTableReconnectRetry(TestCase):
         pks_patch.start()
         self.addCleanup(pks_patch.stop)
 
-        connect_patch = patch('tap_mysql.sync_strategies.full_table.open_connection')
+        connect_patch = patch('tap_mysql.sync_strategies.full_table.connect_with_backoff')
         connect_mock = connect_patch.start()
         self.addCleanup(connect_patch.stop)
         open_conn = MagicMock()
