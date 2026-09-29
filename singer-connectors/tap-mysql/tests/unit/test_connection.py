@@ -7,6 +7,7 @@ from singer import CatalogEntry
 
 from tap_mysql.connection import (
     DEFAULT_SESSION_SQLS,
+    READ_TIMEOUT_SECONDS,
     MySQLConnection,
     fetch_server_id,
     fetch_server_uuid,
@@ -71,6 +72,14 @@ class TestConnection(unittest.TestCase):
         # query` on any table that took a while to stream.
         self.assertIn('SET @@session.net_write_timeout=3600', DEFAULT_SESSION_SQLS)
         self.assertIn('SET @@session.max_execution_time=0', DEFAULT_SESSION_SQLS)
+
+    def test_connection_sets_a_real_client_side_read_timeout(self):
+        # Simon-Data fix: `net_read_timeout` is a session SQL var that only
+        # bounds the *server's* patience waiting on us -- it does nothing for
+        # our own socket read, which pymysql leaves unbounded (blocks
+        # forever) unless `read_timeout` is passed as a connection arg.
+        conn = MySQLConnection({'user': 'u', 'password': 'p', 'host': 'h', 'port': '3306'})
+        self.assertEqual(conn._read_timeout, READ_TIMEOUT_SECONDS)
 
     def test_run_session_sqls_executes_every_default_session_sql(self):
         mysql_con = MagicMock(spec_set=MySQLConnection).return_value
