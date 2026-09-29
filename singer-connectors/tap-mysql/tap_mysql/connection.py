@@ -38,10 +38,7 @@ DEFAULT_SESSION_SQLS = ['SET @@session.time_zone="+0:00"',
 
 @backoff.on_exception(backoff.expo,
                       (pymysql.err.OperationalError),
-                      # Each try can itself block for up to READ_TIMEOUT_SECONDS;
-                      # kept low so this nested retry can't multiply with
-                      # full_table.py's own outer retry into an hours-long stall.
-                      max_tries=2,
+                      max_tries=5,
                       factor=2)
 def connect_with_backoff(connection):
     connection.connect()

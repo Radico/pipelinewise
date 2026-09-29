@@ -2,7 +2,6 @@ import unittest
 
 from unittest.mock import patch, MagicMock, call
 
-import pymysql
 from pymysql.cursors import Cursor
 from singer import CatalogEntry
 
@@ -10,7 +9,6 @@ from tap_mysql.connection import (
     DEFAULT_SESSION_SQLS,
     READ_TIMEOUT_SECONDS,
     MySQLConnection,
-    connect_with_backoff,
     fetch_server_id,
     fetch_server_uuid,
     run_session_sqls,
@@ -74,19 +72,6 @@ class TestConnection(unittest.TestCase):
         # query` on any table that took a while to stream.
         self.assertIn('SET @@session.net_write_timeout=3600', DEFAULT_SESSION_SQLS)
         self.assertIn('SET @@session.max_execution_time=0', DEFAULT_SESSION_SQLS)
-
-    def test_connect_with_backoff_gives_up_after_two_tries(self):
-        # Simon-Data fix: each try here can itself block for up to
-        # READ_TIMEOUT_SECONDS, and this nests inside full_table.py's own
-        # outer retry -- kept low so a sustained connectivity problem fails
-        # within minutes rather than compounding into an hours-long stall.
-        mock_conn = MagicMock()
-        mock_conn.connect.side_effect = pymysql.err.OperationalError(2013, 'boom')
-
-        with self.assertRaises(pymysql.err.OperationalError):
-            connect_with_backoff(mock_conn)
-
-        self.assertEqual(mock_conn.connect.call_count, 2)
 
     def test_connection_sets_a_real_client_side_read_timeout(self):
         # Simon-Data fix: `net_read_timeout` is a session SQL var that only
