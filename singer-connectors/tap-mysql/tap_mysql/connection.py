@@ -22,6 +22,14 @@ MATCH_HOSTNAME = ssl.match_hostname
 MARIADB_ENGINE = 'mariadb'
 MYSQL_ENGINE = 'mysql'
 
+# Newer (MySQL 5.7.4+) and not guaranteed on every MySQL-compatible engine
+# we might point this tap at, unlike the rest of DEFAULT_SESSION_SQLS (all
+# supported since ancient MySQL versions) -- failing to set it shouldn't
+# crash the whole connection.
+MYSQL_MAX_EXECUTION_TIME_SQL = 'SET @@session.max_execution_time=0'
+OPTIONAL_TIMEOUT_SQLS = {MYSQL_MAX_EXECUTION_TIME_SQL}
+ERR_UNKNOWN_SYSTEM_VARIABLE = 1193
+
 DEFAULT_SESSION_SQLS = ['SET @@session.time_zone="+0:00"',
                         'SET @@session.wait_timeout=28800',
                         # Server-side counterpart to READ_TIMEOUT_SECONDS.
@@ -33,7 +41,7 @@ DEFAULT_SESSION_SQLS = ['SET @@session.time_zone="+0:00"',
                         'SET @@session.innodb_lock_wait_timeout=3600',
                         # No server-side statement time limit; a large table's
                         # full snapshot can legitimately run for a while.
-                        'SET @@session.max_execution_time=0']
+                        MYSQL_MAX_EXECUTION_TIME_SQL]
 
 
 @backoff.on_exception(backoff.expo,
@@ -55,6 +63,13 @@ def run_session_sqls(connection):
         for sql in session_sqls:
             try:
                 run_sql(connection, sql)
+            except pymysql.err.OperationalError as exc:
+                if sql not in OPTIONAL_TIMEOUT_SQLS or not exc.args or exc.args[0] != ERR_UNKNOWN_SYSTEM_VARIABLE:
+                    raise
+                warnings.append(
+                    f'Built-in timeout not applied: {sql}; server does not support this variable. '
+                    'Check the configured source engine.'
+                )
             except pymysql.err.InternalError as exc:
                 warnings.append(f'Could not set session variable `{sql}`: {exc}')
 
