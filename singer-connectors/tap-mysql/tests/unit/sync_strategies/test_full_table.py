@@ -48,8 +48,7 @@ class TestFullTableReconnectRetry(TestCase):
         self.addCleanup(connect_patch.stop)
         open_conn = MagicMock()
         connect_mock.return_value.__enter__.return_value = open_conn
-        self.cursor_cm = open_conn.cursor.return_value
-        self.cursor_cm.__enter__.return_value = MagicMock()
+        open_conn.cursor.return_value.__enter__.return_value = MagicMock()
 
         sync_query_patch = patch('tap_mysql.sync_strategies.common.sync_query')
         self.sync_query_mock = sync_query_patch.start()
@@ -69,23 +68,6 @@ class TestFullTableReconnectRetry(TestCase):
         self._sync()
 
         self.assertEqual(self.sync_query_mock.call_count, 3)
-
-    def test_masked_error_via_cursor_cleanup_is_still_retried_from_root_cause(self):
-        # Reproduces the actual production failure: pymysql's own cursor.close()
-        # (invoked by `with cursor() as cur:`'s __exit__) raises AttributeError
-        # trying to finish an unbuffered query on an already-dead socket, which
-        # supersedes the original OperationalError via Python's implicit
-        # exception chaining ("During handling of the above exception...").
-        lost_connection = pymysql.err.OperationalError(2013, 'Lost connection to MySQL server during query')
-        self.sync_query_mock.side_effect = [lost_connection, None]
-        self.cursor_cm.__exit__.side_effect = [
-            AttributeError("'NoneType' object has no attribute 'settimeout'"),
-            False,
-        ]
-
-        self._sync()
-
-        self.assertEqual(self.sync_query_mock.call_count, 2)
 
     def test_server_gone_away_is_also_retried(self):
         gone_away = pymysql.err.OperationalError(2006, 'MySQL server has gone away')

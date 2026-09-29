@@ -24,27 +24,6 @@ RECONNECTABLE_ERROR_CODES = {2006, 2013}  # server gone away / lost connection
 MAX_RECONNECT_ATTEMPTS = 5
 
 
-def _root_reconnectable_error_code(exc):
-    """
-    pymysql's own cursor cleanup can mask a lost-connection error: once an
-    unbuffered query dies mid-stream, closing the cursor (the `with cursor()
-    as cur:` __exit__) tries to finish reading the abandoned result set on
-    the now-dead socket, which raises its own AttributeError
-    ("'NoneType' object has no attribute 'settimeout'"). Per Python's `with`
-    semantics that AttributeError -- not the original OperationalError -- is
-    what actually escapes the block, chained via __context__. Walk that chain
-    to find the real cause.
-    """
-    seen_ids = set()
-    current = exc
-    while current is not None and id(current) not in seen_ids:
-        seen_ids.add(id(current))
-        if isinstance(current, pymysql.err.OperationalError) and current.args:
-            return current.args[0]
-        current = current.__context__
-    return None
-
-
 def generate_bookmark_keys(catalog_entry):
     md_map = metadata.to_map(catalog_entry.metadata)
     stream_metadata = md_map.get((), {})
@@ -210,8 +189,8 @@ def sync_table(mysql_conn, catalog_entry, state, columns, stream_version):
                                       stream_version,
                                       params)
             break
-        except (pymysql.err.OperationalError, AttributeError) as exc:
-            error_code = _root_reconnectable_error_code(exc)
+        except pymysql.err.OperationalError as exc:
+            error_code = exc.args[0] if exc.args else None
             if error_code not in RECONNECTABLE_ERROR_CODES or attempt >= MAX_RECONNECT_ATTEMPTS:
                 raise
             LOGGER.warning(
