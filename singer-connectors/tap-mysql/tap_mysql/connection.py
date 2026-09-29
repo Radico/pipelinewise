@@ -20,7 +20,18 @@ MYSQL_ENGINE = 'mysql'
 DEFAULT_SESSION_SQLS = ['SET @@session.time_zone="+0:00"',
                         'SET @@session.wait_timeout=28800',
                         'SET @@session.net_read_timeout=3600',
-                        'SET @@session.innodb_lock_wait_timeout=3600']
+                        # Unset by default, so it falls back to the server's own
+                        # net_write_timeout (commonly 60s) -- an unbuffered
+                        # full-table SELECT streaming rows back to the client
+                        # gets killed with `Lost connection to MySQL server
+                        # during query` if any single row-write pause exceeds
+                        # that. Simon-Data fix, cherry-picked in spirit from
+                        # https://github.com/transferwise/pipelinewise/commit/56a7198cb1f0dff1f659de6561f66281f0226d54
+                        'SET @@session.net_write_timeout=3600',
+                        'SET @@session.innodb_lock_wait_timeout=3600',
+                        # No server-side statement time limit; a large table's
+                        # full snapshot can legitimately run for a while.
+                        'SET @@session.max_execution_time=0']
 
 
 @backoff.on_exception(backoff.expo,
