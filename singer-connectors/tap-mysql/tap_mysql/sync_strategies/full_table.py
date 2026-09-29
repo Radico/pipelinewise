@@ -18,10 +18,11 @@ LOGGER = singer.get_logger('tap_mysql')
 # failing, which we should not retry.
 RECONNECTABLE_ERROR_CODES = {2006, 2013}  # server gone away / lost connection
 
-# A full-table snapshot of our larger tables can legitimately take minutes;
-# a handful of retries gives a transient mid-scan disconnect room to clear
-# without masking a real, persistent connectivity problem.
-MAX_RECONNECT_ATTEMPTS = 5
+# Each attempt reconnects via connect_with_backoff, which has its own nested
+# retry -- so this multiplies with connection.py's own max_tries. Kept low so
+# a sustained (not transient) connectivity problem fails within minutes
+# instead of silently grinding for hours.
+MAX_RECONNECT_ATTEMPTS = 2
 
 
 def _root_reconnectable_error_code(exc):

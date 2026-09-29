@@ -64,11 +64,11 @@ class TestFullTableReconnectRetry(TestCase):
 
     def test_retries_and_succeeds_after_reconnectable_error(self):
         lost_connection = pymysql.err.OperationalError(2013, 'Lost connection to MySQL server during query')
-        self.sync_query_mock.side_effect = [lost_connection, lost_connection, None]
+        self.sync_query_mock.side_effect = [lost_connection, None]
 
         self._sync()
 
-        self.assertEqual(self.sync_query_mock.call_count, 3)
+        self.assertEqual(self.sync_query_mock.call_count, 2)
 
     def test_masked_error_via_cursor_cleanup_is_still_retried_from_root_cause(self):
         # Reproduces the actual production failure: pymysql's own cursor.close()
