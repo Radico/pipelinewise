@@ -2,11 +2,14 @@ import unittest
 
 from unittest.mock import patch, MagicMock, call
 
+import pymysql
 from pymysql.cursors import Cursor
 from singer import CatalogEntry
 
 from tap_mysql.connection import (
     DEFAULT_SESSION_SQLS,
+    ERR_UNKNOWN_SYSTEM_VARIABLE,
+    MYSQL_MAX_EXECUTION_TIME_SQL,
     READ_TIMEOUT_SECONDS,
     MySQLConnection,
     fetch_server_id,
@@ -92,3 +95,42 @@ class TestConnection(unittest.TestCase):
         cur_mock.__enter__.return_value.execute.assert_has_calls(
             [call(sql) for sql in DEFAULT_SESSION_SQLS]
         )
+
+    def _run_session_sqls_with_execute_side_effect(self, side_effect):
+        mysql_con = MagicMock(spec_set=MySQLConnection).return_value
+        mysql_con.session_sqls = DEFAULT_SESSION_SQLS
+        cur_mock = MagicMock(spec_set=Cursor).return_value
+        cur_mock.__enter__.return_value.execute.side_effect = side_effect
+        mysql_con.cursor.return_value = cur_mock
+        run_session_sqls(mysql_con)
+
+    def test_unsupported_max_execution_time_is_a_soft_warning(self):
+        # Simon-Data fix (ported from transferwise/pipelinewise#1365):
+        # max_execution_time isn't guaranteed on every MySQL-compatible
+        # engine we might point this tap at -- failing to set it shouldn't
+        # crash the whole connection.
+        def execute(sql, *args):
+            if sql == MYSQL_MAX_EXECUTION_TIME_SQL:
+                raise pymysql.err.OperationalError(ERR_UNKNOWN_SYSTEM_VARIABLE, 'Unknown system variable')
+
+        self._run_session_sqls_with_execute_side_effect(execute)  # does not raise
+
+    def test_other_operational_error_on_max_execution_time_still_raises(self):
+        # Only the specific "unsupported variable" error is swallowed --
+        # e.g. a connection genuinely dropped while setting it should not be.
+        def execute(sql, *args):
+            if sql == MYSQL_MAX_EXECUTION_TIME_SQL:
+                raise pymysql.err.OperationalError(2013, 'Lost connection to MySQL server during query')
+
+        with self.assertRaises(pymysql.err.OperationalError):
+            self._run_session_sqls_with_execute_side_effect(execute)
+
+    def test_unsupported_variable_error_on_non_optional_sql_still_raises(self):
+        # The fallback is scoped to MYSQL_MAX_EXECUTION_TIME_SQL specifically,
+        # not every session SQL -- a mandatory one failing should still crash.
+        def execute(sql, *args):
+            if sql == 'SET @@session.net_write_timeout=3600':
+                raise pymysql.err.OperationalError(ERR_UNKNOWN_SYSTEM_VARIABLE, 'Unknown system variable')
+
+        with self.assertRaises(pymysql.err.OperationalError):
+            self._run_session_sqls_with_execute_side_effect(execute)
