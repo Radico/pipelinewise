@@ -2,6 +2,7 @@
 # pylint: disable=missing-function-docstring,too-many-arguments,too-many-locals
 import copy
 import datetime
+import json
 import singer
 import time
 
@@ -111,6 +112,11 @@ def row_to_singer_record(catalog_entry, version, row, columns, time_extracted):
                 epoch = datetime.datetime.utcfromtimestamp(0)
                 timedelta_from_epoch = epoch + elem
                 row_to_persist += (timedelta_from_epoch.isoformat() + '+00:00',)
+
+        elif 'object' in property_type and isinstance(elem, (str, bytes)):
+            # pymysql returns MySQL JSON columns as text, but discovery declares
+            # them as JSON objects, so the loader would reject the raw string.
+            row_to_persist += (json.loads(elem),)
 
         elif 'boolean' in property_type or property_type == 'boolean':
             if elem is None:
