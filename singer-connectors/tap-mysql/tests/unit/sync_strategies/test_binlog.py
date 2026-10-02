@@ -2281,3 +2281,50 @@ class TestBinlogSyncStrategy(TestCase):
         assert message.version == 1
         assert message.record == {'time': '08:30:00'}
         assert message.time_extracted is not None
+
+    def test_row_to_singer_record_emits_json_columns_as_objects_when_schema_says_object(self):
+        catalog_entry = CatalogEntry(
+            stream='stream',
+            schema=Schema.from_dict({
+                'type': 'object',
+                'properties': {
+                    'attrs': {'type': ['null', 'object']},
+                },
+            }),
+        )
+
+        def record_for(value):
+            return binlog.row_to_singer_record(
+                catalog_entry,
+                version=1,
+                row={'attrs': value},
+                db_column_map={'attrs': FIELD_TYPE.JSON},
+                time_extracted=datetime.datetime.now(datetime.timezone.utc),
+            ).record
+
+        assert record_for({'segment_id': 25825, 'generation_request_id': 54654}) == {
+            'attrs': {'segment_id': 25825, 'generation_request_id': 54654}
+        }
+        assert record_for({b'a': [b'x', {b'b': 1}]}) == {'attrs': {'a': ['x', {'b': 1}]}}
+        assert record_for(None) == {'attrs': None}
+
+    def test_row_to_singer_record_keeps_json_text_when_schema_says_string(self):
+        catalog_entry = CatalogEntry(
+            stream='stream',
+            schema=Schema.from_dict({
+                'type': 'object',
+                'properties': {
+                    'attrs': {'type': ['null', 'string']},
+                },
+            }),
+        )
+        message = binlog.row_to_singer_record(
+            catalog_entry,
+            version=1,
+            row={'attrs': {'a': 1}},
+            db_column_map={'attrs': FIELD_TYPE.JSON},
+            time_extracted=datetime.datetime.now(datetime.timezone.utc),
+        )
+
+        assert message.record == {'attrs': '{"a": 1}'}
+

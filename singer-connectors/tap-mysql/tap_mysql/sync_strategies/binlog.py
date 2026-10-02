@@ -257,7 +257,10 @@ def row_to_singer_record(catalog_entry, version, db_column_map, row, time_extrac
                 row_to_persist[column_name] = timedelta_from_epoch.isoformat() + '+00:00'
 
         elif db_column_type == FIELD_TYPE.JSON:
-            row_to_persist[column_name] = json.dumps(json_bytes_to_string(val))
+            parsed = json_bytes_to_string(val)
+            # Discovery declares JSON columns as objects, so emit the decoded value for
+            # those; only a stream whose schema says string gets the serialized text.
+            row_to_persist[column_name] = parsed if 'object' in property_type else json.dumps(parsed)
 
         elif property_format == 'spatial':
             if val:
